@@ -147,8 +147,8 @@ void setup() {
 
 void loop() {
     if (Serial.available() > 0) {
-        String message = Serial.readStringUntil('\n');
-        message.trim();
+        String input = Serial.readStringUntil('\n');
+        input.trim();
 
         Serial.print("Public key: e = ");
         Serial.print(pubKey.e);
@@ -160,7 +160,9 @@ void loop() {
         Serial.print(", n = ");
         Serial.println(privKey.n);
 
-        if (message.length() > 0) {
+        if (input.startsWith("e ")) {
+            String message = input.substring(2);
+
             Serial.print("Original: ");
             Serial.println(message);
 
@@ -168,9 +170,16 @@ void loop() {
             encrypt_message(message.c_str(), pubKey, encrypted_message);
             Serial.print("Encrypted: ");
             Serial.println(encrypted_message);
+        }
+
+        else if (input.startsWith("d ")) {
+            input.remove(0, 2);
+
+            Serial.print("Original: ");
+            Serial.println(input);
 
             char decrypted_message[512];
-            decrypt_message(encrypted_message, privKey, decrypted_message);
+            decrypt_message(input.c_str(), privKey, decrypted_message);
             Serial.print("Decrypted: ");
             Serial.println(decrypted_message);
         }

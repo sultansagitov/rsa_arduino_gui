@@ -13,6 +13,12 @@ class EncryptionEntry:
         self.encrypted = encrypted
 
 
+class DecryptionEntry:
+    def __init__(self, original, decrypted):
+        self.original = original
+        self.decrypted = decrypted
+
+
 class SelectableLabel(QLineEdit):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
@@ -31,14 +37,14 @@ class SelectableLabel(QLineEdit):
 
 
 class ResultBlock(QGroupBox):
-    def __init__(self, original, encrypted, parent=None):
+    def __init__(self, original, encrypted, text, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout()
 
         original_label = SelectableLabel(f"Original: {original}")
         layout.addWidget(original_label)
 
-        encrypted_label = SelectableLabel(f"Encrypted: {encrypted}")
+        encrypted_label = SelectableLabel(f"{text}: {encrypted}")
         layout.addWidget(encrypted_label)
 
         self.setLayout(layout)
@@ -50,10 +56,8 @@ class ArduinoInterface(QWidget):
         self.setWindowTitle('Arduino RSA Interface')
         self.setGeometry(100, 100, 1200, 800)
 
-        self.encryption_history = []
+        self.history = []
         self.current_original = None
-
-        self.setStyleSheet("""...""") 
 
         self.layout = QHBoxLayout()
 
@@ -102,14 +106,24 @@ class ArduinoInterface(QWidget):
         input_group = QGroupBox("Send Message")
         input_layout = QVBoxLayout()
 
-        self.message_input = QLineEdit()
-        self.message_input.returnPressed.connect(self.send_message)
-        self.send_button = QPushButton('Send')
-        self.send_button.clicked.connect(self.send_message)
-        self.send_button.setEnabled(False)
+        self.encrypt_message_input = QLineEdit()
+        self.encrypt_message_input.returnPressed.connect(self.send_encrypt_message)
+        self.encrypt_send_button = QPushButton('Encrypt')
+        self.encrypt_send_button.clicked.connect(self.send_encrypt_message)
+        self.encrypt_send_button.setEnabled(False)
 
-        input_layout.addWidget(self.message_input)
-        input_layout.addWidget(self.send_button)
+        self.decrypt_message_input = QLineEdit()
+        self.decrypt_message_input.returnPressed.connect(self.send_decrypt_message)
+        self.decrypt_send_button = QPushButton('Decrypt')
+        self.decrypt_send_button.clicked.connect(self.send_decrypt_message)
+        self.decrypt_send_button.setEnabled(False)
+
+        input_layout.addWidget(self.encrypt_message_input)
+        input_layout.addWidget(self.encrypt_send_button)
+
+        input_layout.addWidget(self.decrypt_message_input)
+        input_layout.addWidget(self.decrypt_send_button)
+
         input_group.setLayout(input_layout)
         self.left_panel.addWidget(input_group)
 
@@ -186,12 +200,22 @@ class ArduinoInterface(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        for entry in reversed(self.encryption_history):
-            block = ResultBlock(
-                entry.original,
-                self.format_encrypted_data(entry.encrypted),
-                self.results_container
-            )
+        for entry in reversed(self.history):
+            block: ResultBlock
+            if isinstance(entry, EncryptionEntry):
+                block = ResultBlock(
+                    entry.original,
+                    self.format_encrypted_data(entry.encrypted),
+                    "Encrypted",
+                    self.results_container
+                )
+            else:
+                block = ResultBlock(
+                    entry.original,
+                    entry.decrypted,
+                    "Decrypted",
+                    self.results_container
+                )
             self.results_container_layout.insertWidget(0, block)
 
     def refresh_ports(self):
@@ -230,10 +254,11 @@ class ArduinoInterface(QWidget):
                 self.serial.setDTR(False)
 
                 self.connect_button.setText('Disconnect')
-                self.send_button.setEnabled(True)
+                self.encrypt_send_button.setEnabled(True)
+                self.decrypt_send_button.setEnabled(True)
                 self.port_selector.setEnabled(False)
                 self.refresh_button.setEnabled(False)
-                self.message_input.setEnabled(True)
+                self.encrypt_message_input.setEnabled(True)
                 self.show_message("Success", f"Connected to {port}")
 
             except Exception as e:
@@ -250,24 +275,41 @@ class ArduinoInterface(QWidget):
             self.show_message("Disconnected", f"Disconnected from {port}")
 
         self.connect_button.setText('Connect')
-        self.send_button.setEnabled(False)
-        self.message_input.setEnabled(False)
+        self.encrypt_send_button.setEnabled(False)
+        self.encrypt_message_input.setEnabled(False)
+        self.decrypt_send_button.setEnabled(False)
+        self.decrypt_message_input.setEnabled(False)
         self.port_selector.setEnabled(True)
         self.refresh_button.setEnabled(True)
         self.refresh_ports()
 
-    def send_message(self):
+    def send_encrypt_message(self):
         if not self.serial or not self.serial.is_open:
             self.show_message("Error", "Not connected to Arduino")
             return
 
-        message = self.message_input.text()
+        message = "e " + self.encrypt_message_input.text()
         if not message:
             return
 
         try:
             self.serial.write(message.encode())
-            self.message_input.clear()
+            self.encrypt_message_input.clear()
+        except Exception as e:
+            self.show_message("Error", f"Failed to send message: {str(e)}")
+
+    def send_decrypt_message(self):
+        if not self.serial or not self.serial.is_open:
+            self.show_message("Error", "Not connected to Arduino")
+            return
+
+        message = "d " + self.decrypt_message_input.text()
+        if not message:
+            return
+
+        try:
+            self.serial.write(message.encode())
+            self.decrypt_message_input.clear()
         except Exception as e:
             self.show_message("Error", f"Failed to send message: {str(e)}")
 
@@ -294,7 +336,14 @@ class ArduinoInterface(QWidget):
             encrypted_data = data.split('Encrypted:')[1].strip()
             if self.current_original:
                 entry = EncryptionEntry(self.current_original, encrypted_data)
-                self.encryption_history.append(entry)
+                self.history.append(entry)
+                self.update_encrypted_display()
+                self.current_original = None
+        elif "Decrypted:" in data:
+            decrypted_data = data.split('Decrypted:')[1].strip()
+            if self.current_original:
+                entry = DecryptionEntry(self.current_original, decrypted_data)
+                self.history.append(entry)
                 self.update_encrypted_display()
                 self.current_original = None
 
