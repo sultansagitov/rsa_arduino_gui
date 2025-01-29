@@ -53,7 +53,7 @@ class ResultBlock(QGroupBox):
 class ArduinoInterface(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Arduino RSA Interface')
+        self.setWindowTitle('RSA encryption')
         self.setGeometry(100, 100, 1200, 800)
 
         self.history = []
