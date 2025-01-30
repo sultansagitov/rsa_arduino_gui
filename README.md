@@ -1,5 +1,7 @@
 # RSA on Arduino with GUI
 
+![screenshot_1.png](screenshor_1.png)
+
 ### Hardware
 - Arduino Uno
 - USB cable to connect the Arduino to your computer
